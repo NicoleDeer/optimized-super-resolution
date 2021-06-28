@@ -62,7 +62,7 @@ class SFT_Net(nn.Module):
         )
 
         self.CondNet = nn.Sequential(
-            nn.Conv2d(8, 128, 4, 4),
+            nn.Conv2d(6, 128, 4, 4),
             nn.LeakyReLU(0.1, True),
             nn.Conv2d(128, 128, 1),
             nn.LeakyReLU(0.1, True),
@@ -138,8 +138,9 @@ class ACD_VGG_BN_96(nn.Module):
         fea = self.feature(x)
         fea = fea.view(fea.size(0), -1)
         gan = self.gan(fea)
-        cls = self.cls(fea)
-        return [gan, cls]
+        #cls = self.cls(fea)
+        #return [gan, cls]
+        return gan
 
 
 #############################################

@@ -30,7 +30,7 @@ def main():
         resume_state = None
         util.mkdir_and_rename(opt['path']['experiments_root'])  # rename old folder if exists
         util.mkdirs((path for key, path in opt['path'].items() if not key == 'experiments_root'
-                     and 'pretrain_model' not in key and 'resume' not in key))
+                    and 'pretrain_model' not in key and 'resume' not in key))
 
     # config loggers. Before it, the log will not work
     util.setup_logger(None, opt['path']['log'], 'train', level=logging.INFO, screen=True)
@@ -92,7 +92,11 @@ def main():
         start_epoch = 0
 
     # training
-    logger.info('Start training from epoch: {:d}, iter: {:d}'.format(start_epoch, current_step))
+    logger.info('Start training from epoch: {:d}, iter: {:d}'.format(
+        start_epoch, current_step))
+    
+    print_freq = opt['logger']['print_freq']
+    save_checkpoint_freq = opt['logger']['save_checkpoint_freq']
     for epoch in range(start_epoch, total_epochs):
         for _, train_data in enumerate(train_loader):
             current_step += 1
@@ -106,9 +110,9 @@ def main():
             model.optimize_parameters(current_step)
 
             # log
-            if current_step % opt['logger']['print_freq'] == 0:
+            if current_step % print_freq == 0:
                 logs = model.get_current_log()
-                message = '<epoch:{:3d}, iter:{:8,d}, lr:{:.3e}> '.format(
+                message = '<epoch:{:d}, iter:{:d}, lr:{:.3e}> '.format(
                     epoch, current_step, model.get_current_learning_rate())
                 for k, v in logs.items():
                     message += '{:s}: {:.4e} '.format(k, v)
@@ -118,7 +122,7 @@ def main():
                 logger.info(message)
 
             # validation
-            if current_step % opt['train']['val_freq'] == 0:
+            if False: #current_step % opt['train']['val_freq'] == 0 and current_step != 0:
                 avg_psnr = 0.0
                 idx = 0
                 for val_data in val_loader:
@@ -159,7 +163,7 @@ def main():
                     tb_logger.add_scalar('psnr', avg_psnr, current_step)
 
             # save models and training states
-            if current_step % opt['logger']['save_checkpoint_freq'] == 0:
+            if current_step % save_checkpoint_freq == 0:
                 logger.info('Saving models and training states.')
                 model.save(current_step)
                 model.save_training_state(epoch, current_step)
