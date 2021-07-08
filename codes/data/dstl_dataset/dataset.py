@@ -38,7 +38,6 @@ class DstlDataset(data.Dataset):
 
     def __init__(self, opt):
         super(DstlDataset, self).__init__()
-        # data_dir = '../dstl'
         self.data_dir = opt['dataroot_HR']
         #train_wkt_v4 = pd.read_csv(os.path.join(self.data_dir, 'train_wkt_v4.csv'))
         #grid_sizes = pd.read_csv(os.path.join(self.data_dir, 'grid_sizes.csv'),
@@ -46,7 +45,7 @@ class DstlDataset(data.Dataset):
 
         #self.data_names = sorted(train_wkt_v4.ImageId.unique())
         all_data_names = glob(os.path.join(self.data_dir, 'three_band/*.tif'))
-
+        all_data_names.sort()
         self.data_names = [all_data_names[i] for i in _train_ids] \
             if opt['phase'] == 'train' else [all_data_names[i] for i in _val_ids]
 
