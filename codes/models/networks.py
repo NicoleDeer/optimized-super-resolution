@@ -31,7 +31,9 @@ def weights_init_normal(m, std=0.02):
 
 def weights_init_kaiming(m, scale=1):
     classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
+    if (classname.find('Conv') != -1 and not (
+            classname == 'ReluConvBn' or
+            classname == 'SeparableConv2d')):
         init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
         m.weight.data *= scale
         if m.bias is not None:
@@ -131,6 +133,8 @@ def define_D(opt):
             norm_type=opt_net['norm_type'], mode=opt_net['mode'], act_type=opt_net['act_type'])
     elif which_model == 'discriminator_vgg_128_SN':
         netD = arch.Discriminator_VGG_128_SN()
+    elif which_model == 'discriminator_pnasnet_192':
+        netD = arch.Discriminator_Pnasnet_192()
     else:
         raise NotImplementedError('Discriminator model [{:s}] not recognized'.format(which_model))
 
@@ -149,6 +153,12 @@ def define_F(opt, use_bn=False):
         netF = UNet(n_channels=3, n_classes=10)
         unet_model_path = opt['unet_model']
         netF.load_state_dict(torch.load(unet_model_path))
+        if gpu_ids:
+            netF = nn.DataParallel(netF)
+    elif 'pnasnet' in opt and opt['pnasnet'] == True:
+        netF = arch.PNasNetFeatureExtractor(
+            use_input_norm=True,
+            device=device)
     else:
         # pytorch pretrained VGG19-54, before ReLU.
         if use_bn:
@@ -161,7 +171,7 @@ def define_F(opt, use_bn=False):
             use_input_norm=True,
             device=device)
         # netF = arch.ResNet101FeatureExtractor(use_input_norm=True, device=device)
-    if gpu_ids:
-        netF = nn.DataParallel(netF)
+        if gpu_ids:
+            netF = nn.DataParallel(netF)
     netF.eval()  # No need to train
     return netF

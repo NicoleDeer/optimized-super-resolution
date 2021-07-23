@@ -1,14 +1,18 @@
+from collections import OrderedDict
 import math
 import torch
 import torch.nn as nn
+import torch.utils.model_zoo as model_zoo
 import torchvision
 from . import block as B
 from . import spectral_norm as SN
 
+import pretrainedmodels.models.pnasnet as pnasnet
+from pretrainedmodels.models.pnasnet import CellStem0, Cell
+
 ####################
 # Generator
 ####################
-
 
 class SRResNet(nn.Module):
     def __init__(self, in_nc, out_nc, nf, nb, upscale=4, norm_type='batch', act_type='relu', \
@@ -270,6 +274,57 @@ class Discriminator_VGG_192(nn.Module):
         return x
 
 
+class Discriminator_Pnasnet_192(nn.Module):
+    def __init__(self,):
+        super(Discriminator_Pnasnet_192, self).__init__()
+        # features
+        self.conv_0 = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv2d(3, 96, kernel_size=3, stride=2, bias=False)),
+            ('bn', nn.BatchNorm2d(96, eps=0.001))
+        ]))
+        self.cell_stem_0 = CellStem0(in_channels_left=96, out_channels_left=54,
+                                     in_channels_right=96,
+                                     out_channels_right=54)
+        self.cell_stem_1 = Cell(in_channels_left=96, out_channels_left=108,
+                                in_channels_right=270, out_channels_right=108,
+                                match_prev_layer_dimensions=True,
+                                is_reduction=True)
+        self.cell_0 = Cell(in_channels_left=270, out_channels_left=216,
+                           in_channels_right=540, out_channels_right=216,
+                           match_prev_layer_dimensions=True)
+        self.cell_1 = Cell(in_channels_left=540, out_channels_left=216,
+                           in_channels_right=1080, out_channels_right=216)
+        self.cell_2 = Cell(in_channels_left=1080, out_channels_left=216,
+                           in_channels_right=1080, out_channels_right=216)
+        self.cell_3 = Cell(in_channels_left=1080, out_channels_left=216,
+                           in_channels_right=1080, out_channels_right=216)
+
+        # classifier
+        self.relu = nn.ReLU()
+        self.avg_pool = nn.AvgPool2d(12, stride=12, padding=0)
+        self.dropout = nn.Dropout(0.5)
+        self.classifier = nn.Sequential(
+            nn.Linear(4320, 100), nn.LeakyReLU(0.2, True), nn.Linear(100, 1))
+
+    def forward(self, x):
+        x_conv_0 = self.conv_0(x)
+        x_stem_0 = self.cell_stem_0(x_conv_0)
+        x_stem_1 = self.cell_stem_1(x_conv_0, x_stem_0)
+        x_cell_0 = self.cell_0(x_stem_0, x_stem_1)
+        x_cell_1 = self.cell_1(x_stem_1, x_cell_0)
+        x_cell_2 = self.cell_2(x_cell_0, x_cell_1)
+        x_cell_3 = self.cell_3(x_cell_1, x_cell_2)
+        #x_cell_4 = self.model.cell_4(x_cell_2, x_cell_3)
+        #x_cell_5 = self.model.cell_5(x_cell_3, x_cell_4)
+        #x_cell_6 = self.model.cell_6(x_cell_4, x_cell_5)
+
+        x = self.relu(x_cell_3)
+        x = self.avg_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.dropout(x)
+        x = self.classifier(x)
+        return x
+
 ####################
 # Perceptual Network
 ####################
@@ -298,6 +353,54 @@ class VGGFeatureExtractor(nn.Module):
         self.features = nn.Sequential(*list(model.features.children())[:(feature_layer + 1)])
         # No need to BP to variable
         for k, v in self.features.named_parameters():
+            v.requires_grad = False
+
+    def forward(self, x):
+        if self.use_input_norm:
+            x = (x - self.mean) / self.std
+        output = self.features(x)
+        return output
+
+
+def pnasnet_features(self, x):
+    x_conv_0 = self.conv_0(x)
+    x_stem_0 = self.cell_stem_0(x_conv_0)
+    x_stem_1 = self.cell_stem_1(x_conv_0, x_stem_0)
+    x_cell_0 = self.cell_0(x_stem_0, x_stem_1)
+    #x_cell_1 = self.cell_1(x_stem_1, x_cell_0)
+    #x_cell_2 = self.cell_2(x_cell_0, x_cell_1)
+    #x_cell_3 = self.cell_3(x_cell_1, x_cell_2)
+    #x_cell_4 = self.cell_4(x_cell_2, x_cell_3)
+    #x_cell_5 = self.cell_5(x_cell_3, x_cell_4)
+    #x_cell_6 = self.cell_6(x_cell_4, x_cell_5)
+    #x_cell_7 = self.cell_7(x_cell_5, x_cell_6)
+    #x_cell_8 = self.cell_8(x_cell_6, x_cell_7)
+    #x_cell_9 = self.cell_9(x_cell_7, x_cell_8)
+    #x_cell_10 = self.cell_10(x_cell_8, x_cell_9)
+    #x_cell_11 = self.cell_11(x_cell_9, x_cell_10)
+    return x_cell_0
+
+pnasnet.PNASNet5Large.features = pnasnet_features
+
+class PNasNetFeatureExtractor(nn.Module):
+    def __init__(self,
+                 use_input_norm=True,
+                 device=torch.device('cpu')):
+        super(PNasNetFeatureExtractor, self).__init__()
+        self.use_input_norm = use_input_norm
+        self.model = nn.DataParallel(pnasnet.PNASNet5Large(num_classes=1001))
+        self.model.module.load_state_dict(model_zoo.load_url(
+            'http://data.lip6.fr/cadene/pretrainedmodels/pnasnet5large-bf079911.pth'))
+        if self.use_input_norm:
+            mean = torch.Tensor([0.5-1, 0.5-1, 0.5-1]).view(1, 3, 1, 1).to(device)
+            # [0.5-1, 0.5-1, 0.5-1] if input in range [-1,1]
+            std = torch.Tensor([0.5*2, 0.5*2, 0.5*2]).view(1, 3, 1, 1).to(device)
+            # [0.5*2, 0.5*2, 0.5*2] if input in range [-1,1]
+            self.register_buffer('mean', mean)
+            self.register_buffer('std', std)
+        self.features = self.model.module.features
+        # No need to BP to variable
+        for k, v in self.model.module.named_parameters():
             v.requires_grad = False
 
     def forward(self, x):
