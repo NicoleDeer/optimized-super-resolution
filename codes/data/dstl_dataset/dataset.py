@@ -38,6 +38,7 @@ class DstlDataset(data.Dataset):
 
     def __init__(self, opt):
         super(DstlDataset, self).__init__()
+        # data_dir = '/Users/zhoufang/Desktop/lu/dstl'
         self.data_dir = opt['dataroot_HR']
         #train_wkt_v4 = pd.read_csv(os.path.join(self.data_dir, 'train_wkt_v4.csv'))
         #grid_sizes = pd.read_csv(os.path.join(self.data_dir, 'grid_sizes.csv'),
@@ -52,12 +53,23 @@ class DstlDataset(data.Dataset):
         self.scale = opt['scale']
         self.patch_size = opt['HR_size']
         self.total_imgs = len(self.data_names)
-
+        self.cached_image_data = None
+        self.counter = 0
 
     def __getitem__(self, index):
-        np.random.seed(index)
-        data_id = self.data_names[np.random.randint(self.total_imgs)]
-        image_data = ImageData(self.data_dir, data_id, grid_sizes=None, train_wkt_v4=None)
+        # Try to use cache.
+        if self.cached_image_data is not None:
+            image_data = self.cached_image_data
+            self.counter -= 1
+            if self.counter == 0:
+                self.cached_image_data = None
+        else:
+            np.random.seed(index)
+            data_id = self.data_names[np.random.randint(self.total_imgs)]
+            image_data = ImageData(self.data_dir, data_id, grid_sizes=None, train_wkt_v4=None)
+            self.cached_image_data = image_data
+            self.counter == 2
+
         image_data.create_train_feature()
         image = image_data.train_feature[:_y_crop, :_x_crop, :]
         image = image.astype(np.float)
@@ -65,7 +77,7 @@ class DstlDataset(data.Dataset):
         #image = adjust_size(image, self.scale)
         image, _ = rand_rotate_and_crop(image, self.patch_size, label=None)
 
-        # TODO: scale image to [-1, 1].
+        # TODO(coufon): scale image to [-1, 1].
         image = normalize(image)
         image_lr = downsample(image, self.scale)
 
